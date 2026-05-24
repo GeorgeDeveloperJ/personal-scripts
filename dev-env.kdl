@@ -1,0 +1,59 @@
+layout {
+    pane split_direction="vertical" {
+
+        // ── Panel de Control ─────────────────────────────────────────────────
+        // Corre el script principal. Usamos 'bash' como wrapper para que:
+        //   1. El SIGHUP de zellij (al presionar ESC) NO mate el script hijo.
+        //   2. El pane persista con una shell aunque el script termine.
+        pane size="30%" {
+            name "⚡ Control"
+            command "bash"
+            args "-c" "trap '' HUP; bash \"$HOME/Documents/Work/Personal/scripts/dev-start.sh\" --clean; echo ''; echo '--- Script finalizado. Presiona Ctrl+C para salir o escribe un comando ---'; exec bash"
+        }
+
+        // ── Paneles de Logs ──────────────────────────────────────────────────
+        pane split_direction="horizontal" {
+
+            // Fila 1: Backends
+            pane split_direction="vertical" {
+                pane {
+                    name "📦 Asistencia Back"
+                    command "bash"
+                    // mkdir garantiza que el archivo exista antes de tail
+                    args "-c" "mkdir -p \"$HOME/.local/share/dev-start/logs\" && touch \"$HOME/.local/share/dev-start/logs/asistencia-back.log\" && tail -F \"$HOME/.local/share/dev-start/logs/asistencia-back.log\""
+                }
+                pane {
+                    name "📦 Carnet Back"
+                    command "bash"
+                    args "-c" "mkdir -p \"$HOME/.local/share/dev-start/logs\" && touch \"$HOME/.local/share/dev-start/logs/carnet-back.log\" && tail -F \"$HOME/.local/share/dev-start/logs/carnet-back.log\""
+                }
+            }
+
+            // Fila 2: Frontends
+            pane split_direction="vertical" {
+                pane {
+                    name "🎨 Asistencia Front"
+                    command "bash"
+                    args "-c" "mkdir -p \"$HOME/.local/share/dev-start/logs\" && touch \"$HOME/.local/share/dev-start/logs/asistencia-front.log\" && tail -F \"$HOME/.local/share/dev-start/logs/asistencia-front.log\""
+                }
+                pane {
+                    name "🎨 Carnet Front"
+                    command "bash"
+                    args "-c" "mkdir -p \"$HOME/.local/share/dev-start/logs\" && touch \"$HOME/.local/share/dev-start/logs/carnet-front.log\" && tail -F \"$HOME/.local/share/dev-start/logs/carnet-front.log\""
+                }
+            }
+
+            // Fila 3: Proxy
+            pane size="20%" {
+                name "🗄️  Cloud SQL Proxy"
+                command "bash"
+                args "-c" "mkdir -p \"$HOME/.local/share/dev-start/logs\" && touch \"$HOME/.local/share/dev-start/logs/cloud-sql-proxy.log\" && tail -F \"$HOME/.local/share/dev-start/logs/cloud-sql-proxy.log\""
+            }
+        }
+    }
+
+    // Barra de estado
+    pane size=1 borderless=true {
+        plugin location="zellij:status-bar"
+    }
+}
