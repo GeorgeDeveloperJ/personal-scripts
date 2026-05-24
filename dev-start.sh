@@ -101,7 +101,11 @@ cleanup() {
     exit 0
 }
 
+# SIGINT / SIGTERM → cleanup normal
+# EXIT se separa para no triggerear cleanup en salidas normales del script
+# SIGHUP se ignora: zellij lo envía al presionar ESC y NO debe matar los servicios
 trap cleanup SIGINT SIGTERM
+trap '' SIGHUP
 
 # ── Verifica dependencias ──────────────────────────────────────────────────────
 check_deps() {
@@ -257,18 +261,18 @@ start_backends() {
 
 # ── Esperar readiness de backends (fix race condition de auth) ────────────────
 wait_for_backends() {
-    log_info "Esperando a que los backends inicialicen..."
+    local port="${1:-3000}"
+    log_info "Esperando a que el backend levante en el puerto $port..."
     local retries=30
-    # Suponiendo que el backend de asistencia corre en el puerto 3000
-    while ! nc -z localhost 3000 2>/dev/null; do
+    while ! nc -z localhost "$port" 2>/dev/null; do
         ((retries--))
         if ((retries == 0)); then
-            log_error "Tiempo de espera agotado para el backend."
-            exit 1
+            log_warn "Tiempo de espera agotado para el backend (puerto $port). Continuando de todos modos..."
+            return 0
         fi
         sleep 1
     done
-    log_ok "Backends listos."
+    log_ok "Backend listo en puerto $port."
 }
 
 # ── Paso 4: Frontends ─────────────────────────────────────────────────────────
@@ -315,13 +319,14 @@ main() {
     gcp_auth
     start_proxy
     start_backends
-    wait_for_backends
+    wait_for_backends 3000
     start_frontends
     show_status
 
-    # Mostrar logs en vivo
-    log_info "Mostrando logs en vivo... (Ctrl+C para detener todo)"
-    # tail -f "$LOG_DIR"/*.log
+    # Mantener el script activo — cuando se ejecuta desde zellij,
+    # el pane de control permanece vivo mientras haya servicios corriendo.
+    log_info "Monitoreando procesos (Ctrl+C para detener todo)..."
+    wait
 }
 
 main "$@"
