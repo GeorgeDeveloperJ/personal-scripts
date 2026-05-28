@@ -1,4 +1,5 @@
-# LeetCode Solutions & Algoritmos
+# Personal Scripts
+
 ![Bash Script](https://img.shields.io/badge/bash_script-%23121011.svg?style=for-the-badge&logo=gnu-bash&logoColor=white)
 
 Bienvenido a mi repositorio de scripts personales. Este repositorio privado tiene como objetivo guardar
