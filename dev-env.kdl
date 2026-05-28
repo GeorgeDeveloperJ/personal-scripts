@@ -1,3 +1,8 @@
+// =============================================================================
+// dev-env.kdl — Layout ESTÁTICO de fallback (todos los servicios)
+// Para un layout dinámico basado en --include/--exclude, usa:
+//   ./dev-env.sh [flags]   (genera /tmp/dev-env-generated.kdl y lanza Zellij)
+// =============================================================================
 layout {
     pane split_direction="vertical" {
 

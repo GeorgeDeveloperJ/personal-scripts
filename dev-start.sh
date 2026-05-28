@@ -34,6 +34,7 @@ declare -a BG_PIDS=()
 
 # ── Parámetros de entrada ──────────────────────────────────────────────────────
 EXCLUDE_REPOS=""
+INCLUDE_REPOS=""
 SKIP_PROXY=false
 CLEAN_LOGS=false
 RUN_INSTALL=false
@@ -44,6 +45,9 @@ show_help() {
     echo "Opciones:"
     echo -e "  ${GREEN}--exclude, -x${RESET}      Repositorios a omitir (separados por coma)."
     echo "                     Ejemplo: --exclude carnet-front,asistencia-back"
+    echo -e "  ${GREEN}--include, -n${RESET}      Solo iniciar los elementos indicados (separados por coma)."
+    echo "                     Valores: proxy, asistencia-back, asistencia-front, carnet-back, carnet-front"
+    echo "                     Ejemplo: --include proxy,carnet-back,carnet-front"
     echo -e "  ${GREEN}--no-proxy${RESET}         Salta el inicio de Cloud SQL Proxy."
     echo -e "  ${GREEN}--clean, -c${RESET}        Limpia los logs antiguos antes de iniciar."
     echo -e "  ${GREEN}--install, -i${RESET}      Ejecuta npm install en cada repositorio antes de iniciar."
@@ -55,6 +59,7 @@ show_help() {
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         --exclude|-x) EXCLUDE_REPOS="$2"; shift 2 ;;
+        --include|-n) INCLUDE_REPOS="$2"; shift 2 ;;
         --no-proxy) SKIP_PROXY=true; shift ;;
         --clean|-c) CLEAN_LOGS=true; shift ;;
         --install|-i) RUN_INSTALL=true; shift ;;
@@ -62,6 +67,26 @@ while [[ "$#" -gt 0 ]]; do
         *) echo -e "${RED}[ERROR]${RESET} Parámetro desconocido: $1"; exit 1 ;;
     esac
 done
+
+# Validar que --include y --exclude no se usen juntos
+if [[ -n "$INCLUDE_REPOS" && -n "$EXCLUDE_REPOS" ]]; then
+    echo -e "${RED}[ERROR]${RESET} --include y --exclude son mutuamente excluyentes. Usa solo uno."
+    exit 1
+fi
+
+# ── Helper: ¿está activo este servicio con las flags actuales? ────────────────
+is_active() {
+    local name="$1"
+    # Si hay include list, solo está activo si aparece en ella
+    if [[ -n "$INCLUDE_REPOS" ]]; then
+        [[ ",$INCLUDE_REPOS," == *",$name,"* ]] && return 0 || return 1
+    fi
+    # Si hay exclude list, está activo si NO aparece en ella
+    if [[ -n "$EXCLUDE_REPOS" ]]; then
+        [[ ",$EXCLUDE_REPOS," == *",$name,"* ]] && return 1 || return 0
+    fi
+    return 0
+}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -184,6 +209,12 @@ start_proxy() {
         log_warn "Saltando Cloud SQL Proxy (--no-proxy)"
         return 0
     fi
+
+    # Si --include está activo y 'proxy' no está en la lista, saltarlo
+    if [[ -n "$INCLUDE_REPOS" && ",$INCLUDE_REPOS," != *",proxy,"* ]]; then
+        log_warn "Saltando Cloud SQL Proxy (no incluido en --include)"
+        return 0
+    fi
     log_section "Paso 2: Cloud SQL Proxy"
     check_port "$PROXY_PORT"
     local log_file="$LOG_DIR/cloud-sql-proxy.log"
@@ -218,8 +249,14 @@ start_node_service() {
     local log_file="$LOG_DIR/${name}.log"
 
     # Verificar si el repositorio fue excluido por el usuario
-    if [[ ",$EXCLUDE_REPOS," == *",$name,"* ]]; then
+    if [[ -n "$EXCLUDE_REPOS" && ",$EXCLUDE_REPOS," == *",$name,"* ]]; then
         log_warn "[$name] Excluido por el usuario (--exclude). Saltando..."
+        return 0
+    fi
+
+    # Si --include está activo, solo levantar los repos en la lista
+    if [[ -n "$INCLUDE_REPOS" && ",$INCLUDE_REPOS," != *",$name,"* ]]; then
+        log_warn "[$name] No incluido en --include. Saltando..."
         return 0
     fi
 
@@ -319,7 +356,15 @@ main() {
     gcp_auth
     start_proxy
     start_backends
-    wait_for_backends 3000
+
+    # Solo esperar readiness si al menos uno de los backends está activo.
+    # Si ninguno fue levantado, saltarse el wait para no perder ~30 s.
+    if is_active "asistencia-back" || is_active "carnet-back"; then
+        wait_for_backends 3000
+    else
+        log_warn "Ningún backend activo — saltando espera de readiness."
+    fi
+
     start_frontends
     show_status
 
