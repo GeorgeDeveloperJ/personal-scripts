@@ -8,7 +8,7 @@ import subprocess
 import shutil
 
 
-def handle_args():
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="storage Sentinel, powerful organizer script"
     )
@@ -56,24 +56,25 @@ def handle_args():
         default=80.0,
         help="disk usage percentage threshold triggering alerts",
     )
-
-    if len(sys.argv) == 1:
-        parser.print_help()
-        sys.exit(1)
-
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if not (args.run or args.dry_run or args.report):
         parser.print_help()
         sys.exit(1)
 
+    return args
+
+
+def handle_args():
+    args = parse_args()
+
     if args.run:
         handle_run(args)
 
-    if args.dry_run:
+    elif args.dry_run:
         handle_dry_run(args)
 
-    if args.report:
+    elif args.report:
         handle_report(args)
 
 
