@@ -3,6 +3,9 @@
 import argparse
 import sys
 import pathlib
+import os
+import subprocess
+import shutil
 
 
 def handle_args():
@@ -73,15 +76,86 @@ def handle_args():
     if args.report:
         handle_report(args)
 
+
+def get_mount_usage(path: str) -> dict:
+    stat = os.statvfs(path)
+
+    total_bytes = stat.f_blocks * stat.f_frsize
+    free_bytes = stat.f_bavail * stat.f_frsize
+    used_bytes = total_bytes - (stat.f_bfree * stat.f_frsize)
+    percent_used = (1.0 - (stat.f_bavail / stat.f_blocks)) * 100.0
+
+    return {
+        "total_gb": round(total_bytes / (1024**3), 1),
+        "free_gb": round(free_bytes / (1024**3), 1),
+        "used_gb": round(used_bytes / (1024**3), 1),
+        "percent_used": round(percent_used, 1),
+    }
+
+
+def send_notification(title: str, message: str, urgency: str = "normal") -> None:
+    try:
+        notify = shutil.which("notify-send")
+        if not notify:
+            return
+        subprocess.run(
+            ["notify-send", "-u", urgency, "-a", "Storage-sentinel", title, message],
+            check=True,
+        )
+
+    except FileNotFoundError:
+        return
+
+
 def handle_run(args: argparse.Namespace):
     pass
+
 
 def handle_dry_run(args: argparse.Namespace):
     pass
 
 
 def handle_report(args: argparse.Namespace):
-    pass
+    MOUNTS = ["/", "/home", "/mnt/data"]
+
+    print("\n" + "=" * 65)
+    print(" 🛡️  STORAGE SENTINEL — PARTITION HEALTH REPORT")
+    print("=" * 65)
+    print(f"{'Mount':<12} {'Used / Total':<20} {'Usage':<12} {'Free':<10}")
+    print("-" * 65)
+
+    warnings = []
+
+    for mount in MOUNTS:
+        if not os.path.exists(mount):
+            continue
+
+        mount_usage = get_mount_usage(mount)
+        used_val = f"{mount_usage['used_gb']:>5.1f}G"
+        total_val = f"{mount_usage['total_gb']:>6.1f}G"
+        used_str = f"{used_val} / {total_val}"
+        percent_str = f"[{mount_usage['percent_used']:>5.1f}%]"
+        free_str = f"{mount_usage['free_gb']:>6.1f}G"
+
+        print(f"{mount:<12} {used_str:<20} {percent_str:<12} {free_str:<10}")
+
+        if mount_usage["percent_used"] >= args.threshold:
+            warnings.append((mount, mount_usage["percent_used"]))
+            send_notification(
+                title="Storage Sentinel Alert",
+                message=f"Storage alert: {mount} is at {mount_usage['percent_used']}% (threshold: {args.threshold}%)",
+                urgency="critical",
+            )
+
+    print("=" * 65)
+
+    if warnings:
+        print("\n⚠️  ALERTS TRIGGERED:")
+        for mount, pct in warnings:
+            print(f"  • {mount} is at {pct}% (exceeded {args.threshold}% threshold)")
+    else:
+        print("\n✅ All partitions healthy.")
+    print()
 
 
 def main():
