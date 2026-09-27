@@ -9,7 +9,14 @@ from pathlib import Path
 # test runner can discover the module
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-from storage_sentinel import get_mount_usage, send_notification, parse_args
+from storage_sentinel import (
+    get_mount_usage,
+    send_notification,
+    parse_args,
+    classify_file,
+    is_settled,
+    scan_candidates,
+)
 
 
 class TestGetMountUsage(unittest.TestCase):
@@ -97,3 +104,116 @@ class TestCLIArguments(unittest.TestCase):
 
         mock_help.assert_called_once()
         self.assertEqual(cm.exception.code, 1)
+
+
+class TestClassifyFiles(unittest.TestCase):
+    def test_media_file(self):
+        files = ["video.mp4", "movie.mkv", "clip.webm", "old.avi"]
+        expected = Path("/mnt/data/Media")
+
+        for file in files:
+            got = classify_file(file, 1)
+            self.assertEqual(got, expected)
+
+    def test_iso_files(self):
+        files = ["ubuntu.iso", "disk.img"]
+        expected = Path("/mnt/data/ISOs")
+
+        for file in files:
+            got = classify_file(file, 1)
+            self.assertEqual(got, expected)
+
+    def test_archive_threshold(self):
+        files = [
+            ("backup.tar.gz", 150 * 1024**2),
+            ("small.tar.gz", 50 * 1024**2),
+            ("installer.deb", 120 * 1024**2),
+            ("package.deb", 30 * 1024**2),
+        ]
+
+        for file in files:
+            got = classify_file(file[0], file[1])
+            if file[1] >= 100 * 1024**2:
+                expected = Path("/mnt/data/Archives")
+            else:
+                expected = None
+
+            self.assertEqual(got, expected)
+
+    def test_ignored_files(self):
+        ignoreds = [
+            "video.mp4.crdownload",
+            "file.part",
+            "cache.tmp",
+            ".hidden_movie.mkv",
+            "main.py",
+            "notes.txt",
+            "data.csv",
+        ]
+        expected = None
+
+        for ignored in ignoreds:
+            got = classify_file(ignored, 1)
+            self.assertEqual(got, expected)
+
+
+class TestIsSettled(unittest.TestCase):
+    def test_settled_case(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            dir_path = Path(temp_dir)
+            file_path = dir_path / "test_artifact.txt"
+            file_path.write_text("This is a temporary test file.")
+
+            past_time = time.time() - 1200
+            os.utime(file_path, (past_time, past_time))
+
+            result = is_settled(file_path, min_age_seconds=900)
+
+            self.assertTrue(result)
+
+    def test_no_settled_case(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            dir_path = Path(temp_dir)
+            file_path = dir_path / "test_artifact.txt"
+            file_path.write_text("This is a temporary test file.")
+
+            past_time = time.time() - 120
+            os.utime(file_path, (past_time, past_time))
+
+            result = is_settled(file_path, min_age_seconds=900)
+
+            self.assertFalse(result)
+
+
+class TestScanCandidates(unittest.TestCase):
+    def test_scan_candidates(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            desktop = root / "Desktop"
+            videos = root / "Videos"
+
+            (desktop / "code_project").mkdir(parents=True)
+            (videos / "series").mkdir(parents=True)
+
+            top_mkv = desktop / "top.mkv"
+            top_mkv.write_text("dummy")
+            recent_mp4 = desktop / "recent.mp4"
+            recent_mp4.write_text("dummy")
+            nested_asset = desktop / "code_project" / "nested_asset.mkv"
+            nested_asset.write_text("dummy")
+            episode_mkv = videos / "series" / "episode.mkv"
+            episode_mkv.write_text("dummy")
+
+            past_time = time.time() - 1200
+            for file in [top_mkv, nested_asset, episode_mkv]:
+                os.utime(file, (past_time, past_time))
+
+            intake_configs = [(desktop, False), (videos, True)]
+            candidates = scan_candidates(intake_configs, min_age_seconds=900)
+
+            candidates_path = [c[0] for c in candidates]
+
+            self.assertIn(top_mkv, candidates_path)
+            self.assertIn(episode_mkv, candidates_path)
+            self.assertNotIn(recent_mp4, candidates_path)
+            self.assertNotIn(nested_asset, candidates_path)

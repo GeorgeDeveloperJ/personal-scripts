@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 
 import argparse
+from string.templatelib import Interpolation
 import sys
-import pathlib
+from pathlib import Path
 import os
 import subprocess
 import shutil
+import time
+from typing import Optional, Union
 
 
 def parse_args(argv=None):
@@ -108,12 +111,120 @@ def send_notification(title: str, message: str, urgency: str = "normal") -> None
         return
 
 
+def classify_file(path: Union[str, Path], size_bytes: int) -> Optional[Path]:
+    path = Path(path)
+
+    IN_PROGRESS = (".crdownload", ".part", ".tmp", ".swp", ".download")
+    MEDIA = (".mkv", ".mp4", ".avi", ".webm", ".flv", ".mov")
+    ISO = (".iso", ".img")
+    ARCHIVE = (".tar.gz", ".tar.xz", ".zip", ".7z", ".rar", ".deb", ".rpm", ".apk")
+    SIZE_THRESHOLD = 100 * 1024**2
+
+    is_ignored = path.name.startswith(".") or path.name.lower().endswith(IN_PROGRESS)
+
+    if is_ignored:
+        return None
+
+    if path.suffix.lower() in MEDIA:
+        return Path("/mnt/data/Media")
+
+    if path.suffix in ISO:
+        return Path("/mnt/data/ISOs")
+
+    if path.name.lower().endswith(ARCHIVE) and size_bytes >= SIZE_THRESHOLD:
+        return Path("/mnt/data/Archives")
+
+    return None
+
+
+def is_settled(path: Path, min_age_seconds: int = 900) -> bool:
+    try:
+        current_time = time.time()
+        mtime = path.stat().st_mtime
+
+        settled = (current_time - mtime) >= min_age_seconds
+
+        return settled
+    except FileNotFoundError:
+        return False
+
+
+def scan_candidates(intake_configs: list, min_age_seconds: int = 900) -> list:
+    candidates = []
+    for dir_path, is_recursive in intake_configs:
+        dir_path = Path(dir_path).expanduser()
+        if not dir_path.exists() or not dir_path.is_dir():
+            continue
+        if is_recursive:
+            for item in dir_path.rglob("*"):
+                if not item.is_file():
+                    continue
+                if not is_settled(item, min_age_seconds):
+                    continue
+
+                size = item.stat().st_size
+                target_dir = classify_file(item, size)
+
+                if target_dir is None:
+                    continue
+
+                candidates.append((item, target_dir, size))
+        else:
+            for item in dir_path.iterdir():
+                if not item.is_file():
+                    continue
+                if not is_settled(item, min_age_seconds):
+                    continue
+
+                size = item.stat().st_size
+                target_dir = classify_file(item, size)
+
+                if target_dir is None:
+                    continue
+
+                candidates.append((item, target_dir, size))
+
+    return candidates
+
+
 def handle_run(args: argparse.Namespace):
     pass
 
 
 def handle_dry_run(args: argparse.Namespace):
-    pass
+    intake_configs = [
+        (Path("~/Desktop"), False),
+        (Path("~/Videos"), True),
+        (Path("~/Downloads"), False),
+    ]
+
+    candidates = scan_candidates(intake_configs, min_age_seconds=args.age)
+
+    if not candidates:
+        print(
+            "No eligible files found for migration (all files are clean or unsettled)"
+        )
+    else:
+        print("\n" + "=" * 65)
+        print(" 🛡️  STORAGE SENTINEL — DRY RUN SIMULATION")
+        print("=" * 65)
+        print(f"{'Target Category':<18} {'Size':<10} {'Candidate File':<35}")
+        print("-" * 65)
+
+        for src, target_dir, size in candidates:
+            category = target_dir.name
+            size_str = (
+                f"{size / (1024**3):>5.1f} GB"
+                if size >= 1024**3
+                else f"{size / (1024**2):>5.1f} MB"
+            )
+            print(f"{category:<18} {size_str:<10} {src.name:<35}")
+
+        print("-" * 65)
+        total_volume = round(sum(c[2] for c in candidates) / (1024**3), 1)
+        print(f"Total: {len(candidates)} files  |  Total Volume: {total_volume} GB")
+        print("ℹ️  Simulation mode: zero filesystem modifications performed.")
+        print("=" * 65 + "\n")
 
 
 def handle_report(args: argparse.Namespace):
