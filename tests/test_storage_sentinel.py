@@ -16,6 +16,8 @@ from storage_sentinel import (
     classify_file,
     is_settled,
     scan_candidates,
+    compute_fingerprint,
+    resolve_destination_path,
 )
 
 
@@ -217,3 +219,72 @@ class TestScanCandidates(unittest.TestCase):
             self.assertIn(episode_mkv, candidates_path)
             self.assertNotIn(recent_mp4, candidates_path)
             self.assertNotIn(nested_asset, candidates_path)
+
+
+class TestFingerprintAndCollission(unittest.TestCase):
+    def test_identical_files_same_fingerprint(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            dir_path = Path(temp_dir)
+            file_path_1 = dir_path / "first_test_artifact.txt"
+            file_path_2 = dir_path / "second_test_artifact.txt"
+            file_path_1.write_text("This is a temporary test file.")
+            file_path_2.write_text("This is a temporary test file.")
+
+            same_fingerprint = compute_fingerprint(file_path_1) == compute_fingerprint(
+                file_path_2
+            )
+
+            self.assertTrue(same_fingerprint)
+
+    def test_different_files_different_fingerprint(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            dir_path = Path(temp_dir)
+            file_path_1 = dir_path / "first_test_artifact.txt"
+            file_path_2 = dir_path / "second_test_artifact.txt"
+            file_path_1.write_text("This is a temporary test file.")
+            file_path_2.write_text(
+                "This is a temporary test file with different content."
+            )
+
+            same_fingerprint = compute_fingerprint(file_path_1) == compute_fingerprint(
+                file_path_2
+            )
+
+            self.assertFalse(same_fingerprint)
+
+    def test_large_file_head_tail_seeking(self):
+        CHUNK_SIZE = 10
+        with tempfile.TemporaryDirectory() as temp_dir:
+            dir_path = Path(temp_dir)
+            file_path_1 = dir_path / "first_test_artifact.txt"
+            file_path_2 = dir_path / "second_test_artifact.txt"
+
+            head_data = b"A" * CHUNK_SIZE
+            middle_data = b"B" * CHUNK_SIZE
+            tail_data_1 = b"C" * CHUNK_SIZE
+            tail_data_2 = b"D" * CHUNK_SIZE
+
+            file_path_1.write_bytes(head_data + middle_data + tail_data_1)
+            file_path_2.write_bytes(head_data + middle_data + tail_data_2)
+
+            fp1 = compute_fingerprint(file_path_1, CHUNK_SIZE)
+            fp2 = compute_fingerprint(file_path_2, CHUNK_SIZE)
+
+            self.assertNotEqual(fp1, fp2)
+
+    def test_collission_resolver(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            dir_path = Path(temp_dir)
+            test_path = dir_path / "sample.mp4"
+
+            no_exists_yet = resolve_destination_path(test_path)
+            (test_path).touch()
+            exists = resolve_destination_path(test_path)
+            (dir_path / "sample (1).mp4").touch()
+            repeated = resolve_destination_path(test_path)
+
+            self.assertEqual(no_exists_yet, test_path)
+            self.assertEqual(exists, dir_path / "sample (1).mp4")
+            self.assertEqual(repeated, dir_path / "sample (2).mp4")
+
+

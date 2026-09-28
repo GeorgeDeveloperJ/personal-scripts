@@ -9,6 +9,7 @@ import subprocess
 import shutil
 import time
 from typing import Optional, Union
+import hashlib
 
 
 def parse_args(argv=None):
@@ -185,6 +186,52 @@ def scan_candidates(intake_configs: list, min_age_seconds: int = 900) -> list:
                 candidates.append((item, target_dir, size))
 
     return candidates
+
+
+def compute_fingerprint(path: Path, chunk_size: int = 4 * 1024**2) -> str:
+    file_size = path.stat().st_size
+    hasher = hashlib.blake2b()
+
+    with open(path, "rb") as file:
+        if file_size > 2 * chunk_size:
+            head = file.read(chunk_size)
+            hasher.update(head)
+
+            file.seek(file_size - chunk_size)
+            tail = file.read(chunk_size)
+            hasher.update(tail)
+        else:
+            hasher.update(file.read())
+
+    return hasher.hexdigest()
+
+
+def resolve_destination_path(target_path: Path) -> Path:
+    target_path = Path(target_path)
+    if not target_path.exists():
+        return target_path
+
+    parent = target_path.parent
+    name = target_path.name
+
+    compound_extensions = (".tar.gz", ".tar.xz", ".tar.bz2")
+
+    stem = target_path.stem
+    suffix = target_path.suffix
+
+    if name.lower().endswith(compound_extensions):
+        for ext in compound_extensions:
+            if name.lower().endswith(ext):
+                stem = name[: -len(ext)]
+                suffix = ext
+                break
+
+    counter = 1
+    while True:
+        candidate = parent / f"{stem} ({counter}){suffix}"
+        if not candidate.exists():
+            return candidate
+        counter += 1
 
 
 def handle_run(args: argparse.Namespace):
