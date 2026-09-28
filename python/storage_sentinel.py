@@ -11,6 +11,7 @@ import shutil
 import time
 from typing import Optional, Union
 import hashlib
+import json
 
 
 def parse_args(argv=None):
@@ -254,12 +255,34 @@ def migrate_candidates(candidates: list) -> None:
         print(f"[MOVED] {src.name} -> {dest}")
 
 
+def load_config(config_path: Union[str, Path]) -> dict:
+    path = Path(config_path).expanduser()
+    if not path.exists():
+        return {}
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+            return config
+    except (json.JSONDecodeError, OSError):
+        print("[WARNING] Error decoding json, probably is a typo in JSON syntax")
+
+    return {}
+
+
 def handle_run(args: argparse.Namespace):
-    intake_configs = [
-        (Path("~/Desktop"), False),
-        (Path("~/Videos"), True),
-        (Path("~/Downloads"), False),
-    ]
+    config = load_config(args.config)
+
+    if "intake_dirs" in config:
+        intake_configs = [
+            (Path(d["path"]), d.get("recursive", False)) for d in config["intake_dirs"]
+        ]
+    else:
+        intake_configs = [
+            (Path("~/Desktop"), False),
+            (Path("~/Videos"), True),
+            (Path("~/Downloads"), False),
+        ]
 
     candidates = scan_candidates(intake_configs, min_age_seconds=args.age)
 
@@ -274,11 +297,18 @@ def handle_run(args: argparse.Namespace):
 
 
 def handle_dry_run(args: argparse.Namespace):
-    intake_configs = [
-        (Path("~/Desktop"), False),
-        (Path("~/Videos"), True),
-        (Path("~/Downloads"), False),
-    ]
+    config = load_config(args.config)
+
+    if "intake_dirs" in config:
+        intake_configs = [
+            (Path(d["path"]), d.get("recursive", False)) for d in config["intake_dirs"]
+        ]
+    else:
+        intake_configs = [
+            (Path("~/Desktop"), False),
+            (Path("~/Videos"), True),
+            (Path("~/Downloads"), False),
+        ]
 
     candidates = scan_candidates(intake_configs, min_age_seconds=args.age)
 
@@ -310,7 +340,8 @@ def handle_dry_run(args: argparse.Namespace):
 
 
 def handle_report(args: argparse.Namespace):
-    MOUNTS = ["/", "/home", "/mnt/data"]
+    config = load_config(args.config)
+    mounts = config.get("mounts", ["/", "/home", "/mnt/data"])
 
     print("\n" + "=" * 65)
     print(" 🛡️  STORAGE SENTINEL — PARTITION HEALTH REPORT")
@@ -320,7 +351,7 @@ def handle_report(args: argparse.Namespace):
 
     warnings = []
 
-    for mount in MOUNTS:
+    for mount in mounts:
         if not os.path.exists(mount):
             continue
 

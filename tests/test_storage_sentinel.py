@@ -5,6 +5,7 @@ import tempfile
 import os
 import time
 from pathlib import Path
+import json
 
 # test runner can discover the module
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
@@ -19,6 +20,7 @@ from storage_sentinel import (
     compute_fingerprint,
     resolve_destination_path,
     migrate_candidates,
+    load_config,
 )
 
 
@@ -290,7 +292,8 @@ class TestFingerprintAndCollission(unittest.TestCase):
 
 
 class TestHandleRun(unittest.TestCase):
-    def test_move_fresh_file(self):
+    @patch("builtins.print")
+    def test_move_fresh_file(self, mock_print):
         with tempfile.TemporaryDirectory() as temp_dir:
             dir_path = Path(temp_dir)
             source_dir = dir_path / "Desktop"
@@ -302,24 +305,25 @@ class TestHandleRun(unittest.TestCase):
             src = source_dir / "movie.mp4"
             src.write_text("dummy video content")
             size = src.stat().st_size
+            dest = target_dir / "movie.mp4"
 
             migrate_candidates([(src, target_dir, size)])
 
-            self.assertTrue((target_dir / "movie.mp4").exists())
+            self.assertTrue(dest.exists())
             self.assertFalse(src.exists())
+            mock_print.assert_called_once_with(f"[MOVED] {src.name} -> {dest}")
 
-    def test_deduplicate_identical_file(self):
+    @patch("builtins.print")
+    def test_deduplicate_identical_file(self, mock_print):
         with tempfile.TemporaryDirectory() as temp_dir:
             dir_path = Path(temp_dir)
             source_dir = dir_path / "Desktop"
             target_dir = dir_path / "Media"
-
 
             source_dir.mkdir()
             target_dir.mkdir()
 
             (target_dir / "movie.mp4").write_text("dummy video content")
-
             src = source_dir / "movie.mp4"
             src.write_text("dummy video content")
             size = src.stat().st_size
@@ -328,13 +332,14 @@ class TestHandleRun(unittest.TestCase):
 
             self.assertTrue((target_dir / "movie.mp4").exists())
             self.assertFalse(src.exists())
+            mock_print.assert_called_once_with(f"[DEDUPLICATED] Removed {src.name}")
 
-    def test_collision_renamed_file(self):
+    @patch("builtins.print")
+    def test_collision_renamed_file(self, mock_print):
         with tempfile.TemporaryDirectory() as temp_dir:
             dir_path = Path(temp_dir)
             source_dir = dir_path / "Desktop"
             target_dir = dir_path / "Media"
-
 
             source_dir.mkdir()
             target_dir.mkdir()
@@ -344,9 +349,48 @@ class TestHandleRun(unittest.TestCase):
             src = source_dir / "movie.mp4"
             src.write_text("dummy video content")
             size = src.stat().st_size
+            dest = target_dir / "movie (1).mp4"
 
             migrate_candidates([(src, target_dir, size)])
 
             self.assertTrue((target_dir / "movie.mp4").exists())
-            self.assertTrue((target_dir / "movie (1).mp4").exists())
+            self.assertTrue(dest.exists())
             self.assertFalse(src.exists())
+            mock_print.assert_called_once_with(f"[MOVED] {src.name} -> {dest}")
+
+
+class TestLoadConfig(unittest.TestCase):
+    def test_load_config_nonexistent_returns_empty(self):
+        result = load_config("/nonexistent/path/config.json")
+
+        self.assertEqual(result, {})
+
+    def test_load_config_valid_json(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            dir_path = Path(temp_dir)
+            temp_json_path = dir_path / "config.json"
+
+            valid_json = {"threshold": 75.0, "age": 600}
+
+            temp_json_path.write_text(json.dumps(valid_json, indent=4, ensure_ascii=False))
+
+            config = load_config(temp_json_path)
+
+            self.assertEqual(config["threshold"], 75.0)
+            self.assertEqual(config["age"], 600)
+
+    @patch("builtins.print")
+    def test_load_config_corrupted_json_graceful(self, mock_print):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            dir_path = Path(temp_dir)
+            temp_json_path = dir_path / "config.json"
+
+            invalid_json = "{corrupted json}"
+            temp_json_path.write_text(invalid_json)
+
+            config = load_config(temp_json_path)
+
+            self.assertEqual(config, {})
+            mock_print.assert_called_once_with(
+                "[WARNING] Error decoding json, probably is a typo in JSON syntax"
+            )
