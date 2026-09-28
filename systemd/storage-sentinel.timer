@@ -1,0 +1,15 @@
+[Unit]
+Description=Run Storage Sentinel Periodically
+Documentation=https://github.com/GeorgeDeveloperJ/personal-scripts
+
+[Timer]
+# Run 5 minutes after user login/boot
+OnBootSec=5min
+# Run every 30 minutes thereafter
+OnUnitActiveSec=30min
+# Spread load to prevent waking CPU at exact same second
+RandomizedDelaySec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

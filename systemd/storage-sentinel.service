@@ -1,0 +1,14 @@
+[Unit]
+Description=Storage Sentinel Automated Media Mover and Health Monitor
+Documentation=https://github.com/GeorgeDeveloperJ/personal-scripts
+After=default.target
+
+[Service]
+Type=oneshot
+# Point directly to your python binary and script
+ExecStart=%h/.local/bin/storage-sentinel --run
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
