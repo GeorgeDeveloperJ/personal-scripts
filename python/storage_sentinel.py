@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 
 import argparse
-from os.path import exists
-from string.templatelib import Interpolation
-import sys
-from pathlib import Path
-import os
-import subprocess
-import shutil
-import time
-from typing import Optional, Union
 import hashlib
 import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+from typing import Optional, Union
+
+__version__ = "1.0.0"
 
 
 def parse_args(argv=None):
@@ -61,6 +61,11 @@ def parse_args(argv=None):
         type=float,
         default=80.0,
         help="disk usage percentage threshold triggering alerts",
+    )
+
+    # Version flag
+    parser.add_argument(
+        "-v", "--version", action="version", version=f"%(prog)s {__version__}"
     )
     args = parser.parse_args(argv)
 
