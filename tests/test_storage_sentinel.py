@@ -18,6 +18,7 @@ from storage_sentinel import (
     scan_candidates,
     compute_fingerprint,
     resolve_destination_path,
+    migrate_candidates,
 )
 
 
@@ -288,3 +289,64 @@ class TestFingerprintAndCollission(unittest.TestCase):
             self.assertEqual(repeated, dir_path / "sample (2).mp4")
 
 
+class TestHandleRun(unittest.TestCase):
+    def test_move_fresh_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            dir_path = Path(temp_dir)
+            source_dir = dir_path / "Desktop"
+            target_dir = dir_path / "Media"
+
+            source_dir.mkdir()
+            target_dir.mkdir()
+
+            src = source_dir / "movie.mp4"
+            src.write_text("dummy video content")
+            size = src.stat().st_size
+
+            migrate_candidates([(src, target_dir, size)])
+
+            self.assertTrue((target_dir / "movie.mp4").exists())
+            self.assertFalse(src.exists())
+
+    def test_deduplicate_identical_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            dir_path = Path(temp_dir)
+            source_dir = dir_path / "Desktop"
+            target_dir = dir_path / "Media"
+
+
+            source_dir.mkdir()
+            target_dir.mkdir()
+
+            (target_dir / "movie.mp4").write_text("dummy video content")
+
+            src = source_dir / "movie.mp4"
+            src.write_text("dummy video content")
+            size = src.stat().st_size
+
+            migrate_candidates([(src, target_dir, size)])
+
+            self.assertTrue((target_dir / "movie.mp4").exists())
+            self.assertFalse(src.exists())
+
+    def test_collision_renamed_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            dir_path = Path(temp_dir)
+            source_dir = dir_path / "Desktop"
+            target_dir = dir_path / "Media"
+
+
+            source_dir.mkdir()
+            target_dir.mkdir()
+
+            (target_dir / "movie.mp4").write_text("dummy different video content")
+
+            src = source_dir / "movie.mp4"
+            src.write_text("dummy video content")
+            size = src.stat().st_size
+
+            migrate_candidates([(src, target_dir, size)])
+
+            self.assertTrue((target_dir / "movie.mp4").exists())
+            self.assertTrue((target_dir / "movie (1).mp4").exists())
+            self.assertFalse(src.exists())

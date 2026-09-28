@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+from os.path import exists
 from string.templatelib import Interpolation
 import sys
 from pathlib import Path
@@ -234,8 +235,42 @@ def resolve_destination_path(target_path: Path) -> Path:
         counter += 1
 
 
+def migrate_candidates(candidates: list) -> None:
+    for src, target_dir, size in candidates:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        dest = target_dir / src.name
+
+        if dest.exists():
+            same_size = dest.stat().st_size == size
+            same_fingerprint = compute_fingerprint(src) == compute_fingerprint(dest)
+            if same_size and same_fingerprint:
+                src.unlink()
+                print(f"[DEDUPLICATED] Removed {src.name}")
+                continue
+
+            dest = resolve_destination_path(dest)
+
+        shutil.move(src, dest)
+        print(f"[MOVED] {src.name} -> {dest}")
+
+
 def handle_run(args: argparse.Namespace):
-    pass
+    intake_configs = [
+        (Path("~/Desktop"), False),
+        (Path("~/Videos"), True),
+        (Path("~/Downloads"), False),
+    ]
+
+    candidates = scan_candidates(intake_configs, min_age_seconds=args.age)
+
+    if not candidates:
+        print("No elegible files found for migration")
+        handle_report(args)
+        return
+
+    migrate_candidates(candidates)
+
+    handle_report(args)
 
 
 def handle_dry_run(args: argparse.Namespace):
