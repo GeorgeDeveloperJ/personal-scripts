@@ -50,7 +50,7 @@ This document defines the strict operating rules, architectural invariants, and 
 ---
 
 ## 6. Engineering Invariants & Repository Standards
-- **Zero Third-Party Dependencies:** Python utilities must strictly utilize the Python 3 standard library (`os`, `sys`, `pathlib`, `shutil`, `hashlib`, `argparse`, `json`, `subprocess`, `time`). Zero virtualenv or `pip` dependencies.
+- **Dependency Hygiene:** Default to the Python 3 standard library (`pathlib`, `shutil`, `argparse`, etc.). Third-party dependencies are kept strictly minimal and require explicit architectural justification (prefer self-contained, low-friction execution).
 - **Filesystem Safety:**
   - Never use `os.rename()` across different mount points or filesystems (avoids `Errno 18 Invalid cross-device link`). Always use `shutil.move()`.
   - Non-destructive collision handling: Never blindly overwrite files; resolve duplicate names with incremental suffixes (`filename (1).ext`).
